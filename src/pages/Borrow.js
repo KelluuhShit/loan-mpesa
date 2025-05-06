@@ -15,11 +15,13 @@ import {
   DialogContent,
   DialogActions,
   IconButton,
+  TextField,
 } from '@mui/material';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCheckCircle, faTimes } from '@fortawesome/free-solid-svg-icons';
+import axios from 'axios';
 import { db, analytics, logEvent } from '../firebaseConfig';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, updateDoc, doc } from 'firebase/firestore';
 import { v4 as uuidv4 } from 'uuid';
 
 function Borrow() {
@@ -33,10 +35,18 @@ function Borrow() {
   const [buttonLoading, setButtonLoading] = useState({});
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedLoan, setSelectedLoan] = useState(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
+  const [modalError, setModalError] = useState('');
+  const [modalPhoneNumber, setModalPhoneNumber] = useState('');
+  const [phoneError, setPhoneError] = useState('');
+  const [stkPushSent, setStkPushSent] = useState(false);
+  const [stkPushReference, setStkPushReference] = useState('');
+  const [transactionStatus, setTransactionStatus] = useState('');
+  const [statusError, setStatusError] = useState('');
 
   // Available loan amounts with service fees
   const loanAmounts = [
-    { amount: 3000, serviceFee: 150 },
+    { amount: 3000, serviceFee: 1 },
     { amount: 6000, serviceFee: 200 },
     { amount: 9000, serviceFee: 250 },
     { amount: 12000, serviceFee: 300 },
@@ -50,7 +60,7 @@ function Borrow() {
     .filter((loan) => loan.amount <= limit)
     .map((loan) => ({
       ...loan,
-      trackingNumber: uuidv4().slice(0, 8),
+      trackingNumber: uuidv4(),
     }));
 
   // Fetch user data from Firestore
@@ -80,11 +90,13 @@ function Borrow() {
           });
         } else {
           const userDoc = querySnapshot.docs[0].data();
+          const phone = userDoc.phoneNumber || 'Not available';
           setUserData({
             fullName: userDoc.fullName || 'Unknown',
             nationalId: userDoc.nationalId || nationalId,
-            phoneNumber: userDoc.phoneNumber || 'Not available',
+            phoneNumber: phone,
           });
+          setModalPhoneNumber(phone === 'Not available' ? '' : phone);
           logEvent(analytics, 'borrow_fetch_success', {
             nationalId,
           });
@@ -109,6 +121,85 @@ function Borrow() {
     fetchUserData();
   }, [nationalId]);
 
+  // Polling for transaction status
+  useEffect(() => {
+    if (!stkPushSent || !stkPushReference || !modalOpen) return;
+
+    const startTime = Date.now();
+    const maxPollingDuration = 300000; // 5 minutes
+
+    const pollStatus = async () => {
+      if (Date.now() - startTime > maxPollingDuration) {
+        setStatusError('Transaction timed out. Please try again.');
+        setStkPushSent(false);
+        console.log('Polling stopped due to timeout');
+        logEvent(analytics, 'borrow_polling_timeout', {
+          nationalId,
+          reference: stkPushReference,
+        });
+        return;
+      }
+
+      try {
+        const apiUrl = process.env.NODE_ENV === 'production'
+          ? process.env.REACT_APP_API_URL || 'https://kopa-mobile-to-mpesa.vercel.app'
+          : 'http://localhost:3000';
+        console.log(`Polling status for PayHero reference: ${stkPushReference}`);
+        const response = await axios.get(`${apiUrl}/api/transaction-status?reference=${stkPushReference}`, {
+          timeout: 20000,
+        });
+
+        console.log(`Status response:`, response.data);
+        if (response.data.success) {
+          const status = response.data.status;
+          setTransactionStatus(status);
+          logEvent(analytics, 'borrow_transaction_status', {
+            nationalId,
+            reference: stkPushReference,
+            status,
+          });
+
+          if (status === 'SUCCESS') {
+            navigate('/checkout', {
+              state: {
+                loanAmount: selectedLoan.amount,
+                nationalId,
+                fullName: userData.fullName,
+                trackingNumber: selectedLoan.trackingNumber,
+                reference: stkPushReference,
+                serviceFee: selectedLoan.serviceFee,
+              },
+            });
+            setModalOpen(false);
+          } else if (status === 'FAILED' || status === 'CANCELLED') {
+            setStatusError('Transaction failed or was cancelled. Please try again.');
+          }
+        } else {
+          setStatusError('Failed to check transaction status. Please try again.');
+        }
+      } catch (err) {
+        console.error('Status polling error:', err);
+        let errorMessage = 'Error checking transaction status. Retrying...';
+        if (err.response?.status === 404) {
+          setTransactionStatus('QUEUED');
+          errorMessage = 'Transaction is being processed. Please wait...';
+        } else if (err.response?.status === 400) {
+          errorMessage = 'Invalid transaction reference. Please try again.';
+        }
+        setStatusError(errorMessage);
+        logEvent(analytics, 'borrow_status_polling_error', {
+          nationalId,
+          reference: stkPushReference,
+          error: err.message,
+          statusCode: err.response?.status,
+        });
+      }
+    };
+
+    const intervalId = setInterval(pollStatus, 5000);
+    return () => clearInterval(intervalId);
+  }, [stkPushSent, stkPushReference, modalOpen, nationalId, selectedLoan, navigate, userData]);
+
   // Handle loan application
   const handleApply = (loanAmount, trackingNumber) => {
     setButtonLoading((prev) => ({ ...prev, [loanAmount]: true }));
@@ -120,10 +211,15 @@ function Borrow() {
 
     setTimeout(() => {
       setButtonLoading((prev) => ({ ...prev, [loanAmount]: false }));
-      setSelectedLoan(
-        eligibleLoans.find((loan) => loan.amount === loanAmount && loan.trackingNumber === trackingNumber)
+      const selected = eligibleLoans.find(
+        (loan) => loan.amount === loanAmount && loan.trackingNumber === trackingNumber
       );
+      setSelectedLoan(selected);
+      setModalPhoneNumber(userData.phoneNumber === 'Not available' ? '' : userData.phoneNumber);
       setModalOpen(true);
+      setStkPushSent(false);
+      setTransactionStatus('');
+      setStatusError('');
       logEvent(analytics, 'borrow_loan_modal_open', {
         nationalId,
         loanAmount,
@@ -132,25 +228,106 @@ function Borrow() {
     }, 2000);
   };
 
-  // Handle modal continue
-  const handleModalContinue = () => {
-    if (selectedLoan) {
-      logEvent(analytics, 'borrow_loan_modal_continue', {
+  // Validate phone number input
+  const validatePhoneNumber = (phone) => {
+    if (!phone) {
+      return 'Phone number is required';
+    }
+    let formattedPhone = phone;
+    if (formattedPhone.startsWith('+254')) {
+      formattedPhone = formattedPhone.slice(1);
+    } else if (formattedPhone.startsWith('0')) {
+      formattedPhone = `254${formattedPhone.slice(1)}`;
+    }
+    if (!/^(254[17]\d{8})$/.test(formattedPhone)) {
+      return 'Invalid phone number format. Use 07XXXXXXXX or 254XXXXXXXXX';
+    }
+    return '';
+  };
+
+  // Handle phone number change
+  const handlePhoneChange = (e) => {
+    const phone = e.target.value;
+    setModalPhoneNumber(phone);
+    setPhoneError(validatePhoneNumber(phone));
+    logEvent(analytics, 'borrow_phone_number_edit', {
+      nationalId,
+      phoneNumber: phone,
+    });
+  };
+
+  // Handle modal continue (STK Push)
+  const handleModalContinue = async () => {
+    if (!selectedLoan) return;
+
+    const phoneValidationError = validatePhoneNumber(modalPhoneNumber);
+    if (phoneValidationError) {
+      setPhoneError(phoneValidationError);
+      return;
+    }
+
+    setConfirmLoading(true);
+    setModalError('');
+    logEvent(analytics, 'borrow_loan_modal_continue', {
+      nationalId,
+      loanAmount: selectedLoan.amount,
+      trackingNumber: selectedLoan.trackingNumber,
+    });
+
+    try {
+      let formattedPhone = modalPhoneNumber;
+      if (formattedPhone.startsWith('+254')) {
+        formattedPhone = formattedPhone.slice(1);
+      } else if (formattedPhone.startsWith('0')) {
+        formattedPhone = `254${formattedPhone.slice(1)}`;
+      }
+
+      const apiUrl = process.env.NODE_ENV === 'production'
+        ? process.env.REACT_APP_API_URL || 'https://kopa-mobile-to-mpesa.vercel.app'
+        : 'http://localhost:3000';
+
+      console.log(`Sending STK Push - Phone: ${formattedPhone}, Amount: ${selectedLoan.serviceFee}, Client Reference: ${selectedLoan.trackingNumber}`);
+
+      const response = await axios.post(
+        `${apiUrl}/api/stk-push`,
+        {
+          phoneNumber: formattedPhone,
+          amount: selectedLoan.serviceFee,
+          reference: selectedLoan.trackingNumber,
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 15000,
+        }
+      );
+
+      if (response.data.success) {
+        setStkPushSent(true);
+        setStkPushReference(response.data.payheroReference);
+        logEvent(analytics, 'borrow_stk_push_success', {
+          nationalId,
+          loanAmount: selectedLoan.amount,
+          serviceFee: selectedLoan.serviceFee,
+          trackingNumber: selectedLoan.trackingNumber,
+          payheroReference: response.data.payheroReference,
+        });
+      } else {
+        throw new Error(response.data.error || 'STK Push initiation failed');
+      }
+    } catch (err) {
+      const errorMessage = err.response?.data?.error || err.message || 'Failed to initiate payment. Please try again.';
+      setModalError(errorMessage);
+      logEvent(analytics, 'borrow_stk_push_error', {
         nationalId,
         loanAmount: selectedLoan.amount,
+        serviceFee: selectedLoan.serviceFee,
         trackingNumber: selectedLoan.trackingNumber,
+        error: errorMessage,
       });
-      navigate('/loan-application', {
-        state: {
-          loanAmount: selectedLoan.amount,
-          nationalId,
-          fullName: userData.fullName,
-          trackingNumber: selectedLoan.trackingNumber,
-        },
-      });
+      console.error('STK Push error:', err);
+    } finally {
+      setConfirmLoading(false);
     }
-    setModalOpen(false);
-    setSelectedLoan(null);
   };
 
   // Handle modal cancel
@@ -162,6 +339,13 @@ function Borrow() {
     });
     setModalOpen(false);
     setSelectedLoan(null);
+    setModalError('');
+    setPhoneError('');
+    setModalPhoneNumber(userData.phoneNumber === 'Not available' ? '' : userData.phoneNumber);
+    setStkPushSent(false);
+    setStkPushReference('');
+    setTransactionStatus('');
+    setStatusError('');
   };
 
   // Render loading state
@@ -229,7 +413,7 @@ function Borrow() {
           </Grid>
         ) : (
           eligibleLoans.map((loan) => (
-            <Grid item xs={12} sm={6} md={4} key={loan.amount}>
+            <Grid item xs={12} sm={6} md={4} key={loan.trackingNumber}>
               <Card
                 sx={{
                   width: '100%',
@@ -352,15 +536,41 @@ function Borrow() {
             aria-label="close"
             onClick={handleModalCancel}
             sx={{ color: 'text.secondary' }}
+            disabled={stkPushSent && transactionStatus !== 'FAILED' && transactionStatus !== 'CANCELLED'}
           >
             <FontAwesomeIcon icon={faTimes} />
           </IconButton>
         </DialogTitle>
         <DialogContent>
+          {modalError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {modalError}
+            </Alert>
+          )}
+          {stkPushSent && !statusError && !transactionStatus && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              STK Push successfully sent to {modalPhoneNumber}. Please complete the payment on your phone.
+            </Alert>
+          )}
+          {statusError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {statusError}
+            </Alert>
+          )}
+          {transactionStatus === 'SUCCESS' && (
+            <Alert severity="success" sx={{ mb: 2 }}>
+              Transaction completed successfully! Redirecting...
+            </Alert>
+          )}
+          {transactionStatus === 'QUEUED' && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              Transaction is being processed. Please complete the payment on your phone.
+            </Alert>
+          )}
           <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, mt: 2 }}>
             <FontAwesomeIcon
               icon={faCheckCircle}
-              style={{ fontSize: '60px', color: '#4caf50' }} // Green color matching success.main
+              style={{ fontSize: '60px', color: '#4caf50' }}
               aria-label="Success checkmark"
             />
             <Box sx={{ width: '100%' }}>
@@ -381,43 +591,59 @@ function Borrow() {
                 variant="body1"
                 sx={{ mb: 1, fontWeight: 'medium', display: 'flex', justifyContent: 'space-between' }}
               >
-                <strong>Recipient Mobile:</strong> {userData.phoneNumber}
+                <strong>Service Fee to Pay:</strong> KES {selectedLoan?.serviceFee.toLocaleString()}
               </Typography>
-              <Typography
-                variant="body1"
-                sx={{ mb: 2, fontWeight: 'medium', display: 'flex', justifyContent: 'space-between' }}
-              >
-                <strong>Service Fee:</strong> KES {selectedLoan?.serviceFee.toLocaleString()}
-              </Typography>
+              <TextField
+                label="Recipient Mobile Number"
+                value={modalPhoneNumber}
+                onChange={handlePhoneChange}
+                fullWidth
+                margin="normal"
+                error={!!phoneError}
+                helperText={phoneError}
+                aria-label="Edit recipient mobile number"
+                inputProps={{ maxLength: 12 }}
+                disabled={stkPushSent}
+              />
               <Typography
                 variant="body2"
-                sx={{ color: 'text.secondary', textAlign: 'center', fontStyle: 'italic' }}
+                sx={{ color: 'text.secondary', textAlign: 'center', fontStyle: 'italic', mt: 2 }}
               >
-                Your service fee will be withdrawable exclusively upon successful completion of your
-                first loan repayment cycle.
+                Pay the service fee via M-PESA to receive your loan. The service fee is withdrawable
+                upon successful completion of your first loan repayment cycle.
               </Typography>
             </Box>
           </Box>
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'center', pb: 3, gap: 2 }}>
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={handleModalCancel}
-            sx={{ px: 4, py: 1, textTransform: 'none' }}
-            aria-label="Cancel loan application"
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={handleModalContinue}
-            sx={{ px: 4, py: 1, textTransform: 'none' }}
-            aria-label="Continue to loan application"
-          >
-            Continue
-          </Button>
+          {!stkPushSent || transactionStatus === 'FAILED' || transactionStatus === 'CANCELLED' ? (
+            <>
+              <Button
+                variant="outlined"
+                color="primary"
+                onClick={handleModalCancel}
+                disabled={confirmLoading}
+                sx={{ px: 4, py: 1, textTransform: 'none' }}
+                aria-label="Cancel loan application"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={handleModalContinue}
+                disabled={confirmLoading || !!phoneError}
+                sx={{ px: 4, py: 1, textTransform: 'none' }}
+                aria-label="Confirm loan application"
+              >
+                {confirmLoading ? <CircularProgress size={24} color="inherit" /> : 'Confirm'}
+              </Button>
+            </>
+          ) : (
+            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+              Awaiting payment confirmation...
+            </Typography>
+          )}
         </DialogActions>
       </Dialog>
     </Box>
