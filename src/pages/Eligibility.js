@@ -672,6 +672,7 @@ function Eligibility() {
                 }}
                 endAdornment={getInputAdornment('income')}
               >
+                <MenuItem value="10000-20000">0 - 9,999</MenuItem>
                 <MenuItem value="10000-20000">10,000 - 20,000</MenuItem>
                 <MenuItem value="20001-30000">20,001 - 30,000</MenuItem>
                 <MenuItem value="30001-40000">30,001 - 40,000</MenuItem>
