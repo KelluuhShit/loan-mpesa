@@ -46,7 +46,7 @@ function Borrow() {
 
   // Available loan amounts with service fees
   const loanAmounts = [
-    { amount: 3000, serviceFee: 1 },
+    { amount: 3000, serviceFee: 150 },
     { amount: 5500, serviceFee: 200 },
     { amount: 11800, serviceFee: 250 },
     { amount: 14200, serviceFee: 300 },
