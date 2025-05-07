@@ -86,7 +86,7 @@ module.exports = async (req, res) => {
       payload,
       {
         headers: { Authorization: authToken, 'Content-Type': 'application/json' },
-        timeout: 10000,
+        timeout: 20000,
       }
     );
 
