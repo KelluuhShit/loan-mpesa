@@ -47,12 +47,12 @@ function Borrow() {
   // Available loan amounts with service fees
   const loanAmounts = [
     { amount: 3000, serviceFee: 1 },
-    { amount: 6000, serviceFee: 200 },
-    { amount: 9000, serviceFee: 250 },
-    { amount: 12000, serviceFee: 300 },
-    { amount: 15000, serviceFee: 350 },
-    { amount: 21000, serviceFee: 400 },
-    { amount: 27000, serviceFee: 450 },
+    { amount: 5500, serviceFee: 200 },
+    { amount: 11800, serviceFee: 250 },
+    { amount: 14200, serviceFee: 300 },
+    { amount: 17400, serviceFee: 350 },
+    { amount: 20500, serviceFee: 400 },
+    { amount: 23070, serviceFee: 450 },
   ];
 
   // Filter loans based on user's limit and assign tracking numbers
@@ -396,9 +396,9 @@ function Borrow() {
       </Typography>
       <Typography
         variant="body1"
-        sx={{ textAlign: 'center', mb: 4, color: 'text.secondary' }}
+        sx={{ textAlign: 'center', mb: 4, color: 'text.secondary', fontWeight: 'bold' }}
       >
-        Your loan limit: KES {limit.toLocaleString()}
+        Dear customer, you qualify for a loan of up to KES {limit.toLocaleString()}. Please select your desired loan amount to complete your application.
       </Typography>
       <Grid
         container

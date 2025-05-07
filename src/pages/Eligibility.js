@@ -59,26 +59,9 @@ function Eligibility() {
 
   const steps = ['Personal Details', 'Additional Details'];
 
-  const calculateLoanLimit = (income) => {
-    switch (income) {
-      case '10000-20000':
-        return 3000;
-      case '20001-30000':
-        return 6000;
-      case '30001-40000':
-        return 9000;
-      case '40001-50000':
-        return 12000;
-      case '50001-60000':
-        return 15000;
-      case '60001-70000':
-        return 21000;
-      case '70001-80000':
-        return 27000;
-      default:
-        console.warn('Invalid income value:', income);
-        return 3000;
-    }
+  const calculateLoanLimit = () => {
+    // All users are eligible for the maximum loan limit of 27,000 KES
+    return 27000;
   };
 
   const validateField = (field, value) => {
@@ -261,7 +244,7 @@ function Eligibility() {
     setLoading(true);
     setErrors((prev) => ({ ...prev, submit: '' }));
     try {
-      const loanLimit = calculateLoanLimit(form.income);
+      const loanLimit = calculateLoanLimit();
       const submissionData = {
         fullName: form.fullName.trim(),
         phoneNumber: form.phoneNumber,
