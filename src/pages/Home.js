@@ -151,7 +151,17 @@ function Home() {
               fontSize: { xs: '1.8rem', sm: '2.2rem', md: '3rem' },
             }}
           >
-            Welcome to Kopa Mobile to M
+            Welcome to Kopa Mobile to
+            <Typography
+            variant="h1"
+            gutterBottom
+            sx={{
+              color: 'white',
+              fontWeight: 700,
+              fontSize: { xs: '1.8rem', sm: '2.2rem', md: '3rem' },
+            }}
+          >
+            M
             <Box
                         component="img"
                         src={require('../assets/logo.png')}
@@ -163,6 +173,7 @@ function Home() {
                           display: 'inline',
                         }}
                       />PESA
+                      </Typography> 
           </Typography>
           <Typography
             variant="body1"
@@ -424,8 +435,12 @@ function Home() {
                 Contact Us
               </Typography>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Phone sx={{ mr: 1 }} />
-                <Typography variant="body1">+254 720 000 000</Typography>
+                <Email sx={{ mr: 1 }} />
+                <Typography variant="body1">
+                  <Link href="mailto:support@kopa-to-mpesa.com" color="inherit">
+                    support@kopa-to-mpesa.com
+                  </Link>
+                </Typography>
               </Box>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <Email sx={{ mr: 1 }} />
