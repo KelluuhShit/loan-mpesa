@@ -104,9 +104,22 @@ function Navbar() {
             color: 'inherit',
             textDecoration: 'none',
             fontFamily: '"Montserrat", sans-serif',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
           }}
         >
-          KOPA TO M-PESA
+          KOPA TO  M<Box
+            component="img"
+            src={require('../assets/navbg.png')}
+            alt="M-PESA Logo"
+            sx={{
+              height: 28,
+              width: 22,
+              verticalAlign: 'middle',
+              display: 'inline',
+            }}
+          />PESA
         </Typography>
 
         {/* Desktop: Nav Items, Mobile: Menu Icon */}
