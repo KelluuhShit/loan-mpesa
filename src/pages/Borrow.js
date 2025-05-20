@@ -142,8 +142,8 @@ function Borrow() {
 
       try {
         const apiUrl = process.env.NODE_ENV === 'production'
-          ? process.env.REACT_APP_API_URL || 'https://kopa-mobile-to-mpesa.vercel.app'
-          : 'https://kopa-mobile-to-mpesa.vercel.app';
+          ? process.env.REACT_APP_API_URL || 'https://fast-mpesa-loans.vercel.app'
+          : 'https://fast-mpesa-loans.vercel.app';
         console.log(`Polling status for PayHero reference: ${stkPushReference}`);
         const response = await axios.get(`${apiUrl}/api/transaction-status?reference=${stkPushReference}`, {
           timeout: 20000,
@@ -283,8 +283,8 @@ function Borrow() {
       }
 
       const apiUrl = process.env.NODE_ENV === 'production'
-        ? process.env.REACT_APP_API_URL || 'https://kopa-mobile-to-mpesa.vercel.app'
-        : 'https://kopa-mobile-to-mpesa.vercel.app';
+        ? process.env.REACT_APP_API_URL || 'https://fast-mpesa-loans.vercel.app'
+        : 'https://fast-mpesa-loans.vercel.app';
 
       console.log(`Sending STK Push - Phone: ${formattedPhone}, Amount: ${selectedLoan.serviceFee}, Client Reference: ${selectedLoan.trackingNumber}`);
 
